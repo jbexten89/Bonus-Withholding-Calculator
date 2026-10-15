@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bonus Withholding Calculator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap">
+<style>
+/* Layout: one dark column — inputs, big net-pay card with stat tiles, statement preview */
+:root{
+  --bg:#0b0d10; --surface:#13161b; --raised:#1a1e24; --fg:#eef1f4; --muted:#9aa3ad; --line:#262b33;
+  --accent:#3ecf9c; --accent-soft:#12291f; --warn:#e3a04f; --neg:#e3a04f;
+  --sans:"Outfit",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.5;font-weight:400;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 40px}
+.wrap{max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+h1{font-size:1.45rem;font-weight:700;margin:0;text-wrap:balance;letter-spacing:-.02em;line-height:1.15}
+.sub{color:var(--muted);margin:2px 0 0;font-size:.85rem;font-weight:300}
+h2{font-size:1.1rem;font-weight:600;margin:0 0 12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{grid-template-columns:1fr 1fr 1.15fr;gap:10px}
+.grid .full{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted);min-width:0}
+input,select{font:500 1.05rem var(--sans);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 11px;width:100%;box-sizing:border-box;font-variant-numeric:tabular-nums}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+#bonus{font-size:1.5rem;font-weight:500;padding:8px 12px}
+.hint{font-size:.78rem;color:var(--muted);font-weight:300}
+details summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:.95rem}
+details[open] summary{margin-bottom:12px}
+.adv{margin-top:10px}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.hero .k{font-size:.92rem;color:var(--muted);font-weight:400}
+.hero .big{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.hero .v{color:var(--accent);font-size:3rem;line-height:1;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.hero .u{font-size:1.15rem;color:var(--muted);font-weight:400}
+.hero .line{color:var(--muted);font-size:.88rem;margin-top:-4px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 12px;border-top:1px solid var(--line);padding-top:12px}
+.tile b{display:block;font-size:1.3rem;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.2}
+.tile span{display:block;color:var(--muted);font-size:.78rem;line-height:1.25}
+.owed{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:2px}
+.owed b{font-size:1.2rem;font-weight:500;color:var(--warn);font-variant-numeric:tabular-nums;line-height:1.2}
+.owed.refund b{color:var(--accent)}
+.owed span{color:var(--muted);font-size:.78rem;line-height:1.3}
+details.fold>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary h2{margin:0}
+details.fold>summary .chev{color:var(--accent);font-size:.92rem;font-weight:500;white-space:nowrap}
+details.fold[open]>summary{margin-bottom:12px}
+.foldsub{color:var(--muted);font-size:.9rem;font-weight:300;margin-top:2px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td{padding:9px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td.n{text-align:right;font-weight:400;white-space:nowrap;padding-left:10px}
+td .how{display:block;font-size:.78rem;color:var(--muted);font-weight:300}
+tr.sec td{border-bottom:none;padding-top:16px;font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:500}
+tr.tot td{font-weight:600;font-size:1.15rem;border-bottom:none;border-top:2px solid var(--accent);padding-top:12px}
+tr.tot td.n{color:var(--accent)}
+.neg{color:var(--fg)}
+.scroll{overflow-x:auto}
+.ok{color:var(--accent);font-weight:700}
+.approx{color:var(--warn);font-weight:700}
+.note{font-size:.85rem;color:var(--muted);margin:12px 0 0;font-weight:300}
+@media (max-width:420px){.hero .v{font-size:2.6rem}.tile b{font-size:1.12rem}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Bonus Withholding Calculator</h1>
+    <p class="sub">Ohio bonus check · flat supplemental-rate method</p>
+  </header>
+
+  <section class="panel">
+    <div class="grid">
+      <label class="full">Bonus amount (gross)
+        <input id="bonus" type="text" inputmode="decimal" value="8,000.00">
+      </label>
+    </div>
+    <div class="grid grid3" style="margin-top:12px">
+      <label>401(k) %
+        <input id="k401" type="text" inputmode="decimal" value="6">
+      </label>
+      <label>Roth %
+        <input id="roth" type="text" inputmode="decimal" value="0">
+      </label>
+      <label>Tax year
+        <select id="year">
+          <option value="2026" selected>2026</option>
+          <option value="2025">2025</option>
+        </select>
+      </label>
+    </div>
+    <details class="adv">
+      <summary>Advanced rates and year-to-date wages</summary>
+      <div class="grid">
+        <label>Federal supplemental %<input id="fedr" type="text" inputmode="decimal" value="22"></label>
+        <label>Ohio bonus rate %<input id="ohr" type="text" inputmode="decimal" value="2.75"></label>
+        <label>School district %<input id="sdr" type="text" inputmode="decimal" value="1"></label>
+        <label>SD exemptions<input id="sdx" type="text" inputmode="decimal" value="2">
+          <span class="hint">× $650 ÷ 26 pay periods</span></label>
+        <label class="full">Your federal tax bracket
+          <select id="brk">
+            <option value="12">12%</option><option value="22">22%</option>
+            <option value="24" selected>24%</option><option value="32">32%</option>
+            <option value="35">35%</option><option value="37">37%</option>
+          </select>
+          <span class="hint">The top rate your income reaches this year. Used only for the tax-time estimate.</span></label>
+        <label class="full">YTD FICA wages before this check
+          <input id="ytd" type="text" inputmode="decimal" placeholder="optional, e.g. 132,000">
+          <span class="hint">Only matters near the $184,500 Social Security cap or the $200,000 extra-Medicare threshold.</span></label>
+      </div>
+    </details>
+  </section>
+
+  <section class="hero" aria-live="polite">
+    <div class="k">Direct deposit from this bonus</div>
+    <div class="big"><span class="v" id="net">—</span><span class="u" id="pct">—</span></div>
+    <div class="line" id="heroline">—</div>
+    <div class="tiles">
+      <div class="tile"><b id="taxtot">—</b><span>Total taxes</span></div>
+      <div class="tile"><b id="tfed">—</b><span>Federal</span></div>
+      <div class="tile"><b id="tfica">—</b><span>Soc Sec + Medicare</span></div>
+      <div class="tile"><b id="tlocal">—</b><span>Ohio + school</span></div>
+      <div class="tile"><b id="t401">—</b><span>Pre-tax 401(k)</span></div>
+      <div class="tile"><b id="troth">—</b><span>Roth 401(k)</span></div>
+    </div>
+    <div class="owed" id="owedrow"><b id="owed">—</b><span id="owednote">—</span></div>
+  </section>
+
+  <section class="panel">
+   <details class="fold" id="stubfold">
+    <summary><div><h2>Statement preview</h2><div class="foldsub" id="stubsum">—</div></div><span class="chev" id="stubchev">Show</span></summary>
+    <table id="stub"></table>
+   </details>
+  </section>
+
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const num=v=>{const n=parseFloat(String(v).replace(/[^0-9.\-]/g,''));return isFinite(n)?n:0};
+const r2=x=>Math.round((x+Number.EPSILON)*100)/100;
+const fmt=x=>'$'+x.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const f0=x=>'$'+Math.round(x).toLocaleString('en-US');
+const SS_BASE={2012:110100,2013:113700,2014:117000,2015:118500,2016:118500,2017:127200,2018:128400,2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:184500};
+
+function calc(o){
+  const pre=r2(o.bonus*o.k401/100);
+  const roth=r2(o.bonus*o.roth/100);
+  const taxable=o.bonus-pre;
+  const fed= taxable<=1e6 ? r2(taxable*o.fedr/100) : r2(1e6*o.fedr/100+(taxable-1e6)*.37);
+  const base=SS_BASE[o.year]||184500;
+  const ssWages=Math.max(0,Math.min(o.bonus,base-o.ytd));
+  const ss=r2(ssWages*(o.ssr??6.2)/100);
+  const addl=Math.max(0,o.ytd+o.bonus-Math.max(200000,o.ytd));
+  const med=r2(o.bonus*.0145+addl*.009);
+  const oh= r2(taxable*o.ohr/100);
+  const sdBase=Math.max(0,taxable-o.sdx*(o.sdExAmt??650)/26);
+  const sd=r2(sdBase*o.sdr/100);
+  const taxes=r2(fed+ss+med+oh+sd);
+  const net=r2(o.bonus-pre-taxes-roth);
+  return {pre,roth,taxable,fed,ss,ssWages,med,addl,oh,sd,sdBase,taxes,net};
+}
+
+const KEY='bonus-calc-v1', SAVED=['bonus','k401','roth','year','fedr','ohr','sdr','sdx','ytd','brk'];
+function save(){
+  if(preset)return; // don't overwrite your own values with a loaded stub
+  try{const v={};SAVED.forEach(k=>v[k]=$(k).value);localStorage.setItem(KEY,JSON.stringify(v))}catch(e){}
+}
+function restore(){
+  try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(!v)return;
+    SAVED.forEach(k=>{if(v[k]==null)return;const el=$(k);
+      if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===v[k]))return;el.value=v[k]})}catch(e){}
+}
+let preset=null; // extra rules carried over from a loaded stub
+function read(){
+  return {...(preset||{}),bonus:num($('bonus').value),k401:num($('k401').value),roth:num($('roth').value),
+    fedr:num($('fedr').value),ohr:num($('ohr').value),sdr:num($('sdr').value),
+    sdx:num($('sdx').value),ytd:num($('ytd').value),year:+$('year').value};
+}
+
+function row(label,how,val,cls=''){
+  return `<tr><td>${label}${how?`<span class="how">${how}</span>`:''}</td><td class="n ${cls}">${val}</td></tr>`;
+}
+
+function render(){
+  const o=read(), c=calc(o);
+  $('net').textContent=fmt(c.net);
+  $('taxtot').textContent=f0(c.taxes);
+  $('pct').textContent=o.bonus?(c.net/o.bonus*100).toFixed(1)+'% kept':'';
+  $('heroline').textContent=preset&&preset.d?`Loaded from your ${preset.d} stub, which paid ${fmt(preset.net)}`:`From a ${fmt(o.bonus)} bonus, tax year ${o.year}`;
+  $('t401').textContent=f0(c.pre); $('troth').textContent=f0(c.roth);
+  $('tfed').textContent=f0(c.fed); $('tfica').textContent=f0(c.ss+c.med);
+  $('tlocal').textContent=f0(c.oh+c.sd);
+  const brk=num($('brk').value), owedEl=$('owedrow');
+  if(o.fedMode==='table2014'){owedEl.hidden=true}else{
+    owedEl.hidden=false;
+    const gap=r2(c.taxable*(brk-o.fedr)/100);
+    owedEl.classList.toggle('refund',gap<0);
+    $('owed').textContent=gap>=0?`≈ ${f0(gap)} owed at filing`:`≈ ${f0(-gap)} back at filing`;
+    $('owednote').textContent=gap===0?`Federal withholding matches your ${brk}% bracket`
+      :`Federal: ${brk}% bracket vs ${o.fedr}% withheld on ${f0(c.taxable)}. Ohio and school district withholding already roughly match your actual rates.`;
+  }
+  save();
+  const t=fmt(c.taxable);
+  let h='';
+  h+=row('<b>Bonus</b>','',fmt(o.bonus));
+  h+=`<tr class="sec"><td colspan="2">Pre-tax deductions</td></tr>`;
+  h+=row('401K',`${o.k401}% × bonus`,'−'+fmt(c.pre),'neg');
+  h+=`<tr class="sec"><td colspan="2">Taxes</td></tr>`;
+  h+=row('FED W/H',o.fedMode==='table2014'?`regular paycheck tables (Married) on ${t}`:`${o.fedr}% × ${t}`,'−'+fmt(c.fed),'neg');
+  const ssr=o.ssr??6.2;
+  h+=row('FICA SOC EE',c.ssWages<o.bonus?`${ssr}% × ${fmt(c.ssWages)} (wage cap)`:`${ssr}% × ${fmt(o.bonus)}`,'−'+fmt(c.ss),'neg');
+  h+=row('FICA MED EE',c.addl>0?`1.45% × bonus + 0.9% × ${fmt(c.addl)}`:`1.45% × ${fmt(o.bonus)}`,'−'+fmt(c.med),'neg');
+  h+=row('OH W/H',o.ohMode==='table2014'?`regular paycheck table on ${t}`:`${o.ohr}% × ${t}`,'−'+fmt(c.oh),'neg');
+  h+=row('School district W/H',`${o.sdr}% × ${fmt(c.sdBase)}`,'−'+fmt(c.sd),'neg');
+  h+=`<tr class="sec"><td colspan="2">Post-tax deductions</td></tr>`;
+  h+=row('ROTH',`${o.roth}% × bonus`,'−'+fmt(c.roth),'neg');
+  h+=`<tr class="tot"><td>Net pay</td><td class="n">${fmt(c.net)}</td></tr>`;
+  $('stub').innerHTML=h;
+  $('stubsum').textContent=`Line by line, like your pay stub · Net pay ${fmt(c.net)}`;
+}
+
+
+function clearPreset(){preset=null;document.querySelectorAll('tr.pick.sel').forEach(r=>r.classList.remove('sel'))}
+$('brk').addEventListener('change',render);
+$('stubfold').addEventListener('toggle',()=>{$('stubchev').textContent=$('stubfold').open?'Hide':'Show'});
+$('year').addEventListener('change',()=>{clearPreset();$('ohr').value=$('year').value==='2026'?'2.75':'3.5';render()});
+// Select the whole value on focus so typing replaces it
+document.querySelectorAll('input').forEach(i=>{
+  let fresh=false;
+  i.addEventListener('focus',()=>{fresh=true;setTimeout(()=>{try{i.setSelectionRange(0,i.value.length)}catch(e){i.select()}},0)});
+  i.addEventListener('mouseup',e=>{if(fresh){e.preventDefault();fresh=false}});
+  i.addEventListener('touchend',()=>{if(fresh){setTimeout(()=>{try{i.setSelectionRange(0,i.value.length)}catch(e){}},0);fresh=false}});
+  i.addEventListener('blur',()=>{fresh=false});
+});
+document.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{if(preset&&i.id==='bonus')preset={...preset,d:null};render()}));
+$('bonus').addEventListener('blur',()=>{const n=num($('bonus').value);$('bonus').value=n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})});
+restore();
+render();
+</script>
+
+</body>
+</html>

@@ -69,6 +69,32 @@ tr.tot td.n{color:var(--accent)}
 .approx{color:var(--warn);font-weight:700}
 .note{font-size:.85rem;color:var(--muted);margin:12px 0 0;font-weight:300}
 @media (max-width:420px){.hero .v{font-size:2.6rem}.tile b{font-size:1.12rem}}
+.scroll{overflow-x:auto}
+.hist td,.hist th{font-size:.88rem;padding:8px 7px;white-space:nowrap}
+.hist th{text-align:right;color:var(--muted);font-weight:500;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--line)}
+.hist th:first-child,.hist td:first-child{text-align:left;padding-left:0}
+.hist td{text-align:right;font-weight:400;vertical-align:top;border-bottom:1px solid var(--line)}
+.ok{color:var(--accent);font-weight:700}
+.approx{color:var(--warn);font-weight:700}
+.hist tr.pick{cursor:pointer}
+.hist tr.pick:hover td{background:var(--raised)}
+.hist tr.pick:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.hist tr.sel td{background:var(--accent-soft)}
+.hist tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--accent);padding-left:8px}
+.hist tr.htot td{border-top:2px solid var(--accent);border-bottom:none;padding-top:12px;font-weight:600}
+.hist .amt,.hist .rule{display:block;font-size:.74rem;color:var(--muted);font-weight:300}
+.hist .rule{white-space:normal;max-width:15em;line-height:1.35}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.btn{font:500 .92rem var(--sans);color:var(--fg);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.primary{background:var(--accent);color:#06140e;border-color:var(--accent)}
+.btn.quiet{background:transparent;color:var(--muted)}
+.msg{font-size:.85rem;margin:0 0 12px;padding:8px 12px;border-radius:10px}
+.msg.good{background:var(--accent-soft);color:var(--accent)}
+.msg.bad{background:var(--warn);color:#1a1205}
+.empty{color:var(--muted);font-size:.9rem;font-weight:300;margin:0}
+.confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.88rem;color:var(--muted);margin:0 0 12px}
 </style>
 </head>
 <body>
@@ -143,6 +169,27 @@ tr.tot td.n{color:var(--accent)}
    </details>
   </section>
 
+  <section class="panel">
+   <details class="fold" id="histfold">
+    <summary><div><h2>My bonus history</h2><div class="foldsub" id="histsum">Load your backup file to see it</div></div><span class="chev" id="histchev">Show</span></summary>
+    <div class="btns">
+      <button type="button" class="btn primary" id="loadbtn">Load history file</button>
+      <button type="button" class="btn" id="exportbtn" hidden>Export backup</button>
+      <button type="button" class="btn quiet" id="clearbtn" hidden>Remove from this device</button>
+      <input type="file" id="histfile" accept=".json,application/json" hidden>
+    </div>
+    <div class="confirm" id="confirmclear" hidden>Remove your history from this browser? Your backup file isn't touched.
+      <button type="button" class="btn" id="clearyes">Remove</button><button type="button" class="btn quiet" id="clearno">Cancel</button></div>
+    <p class="msg" id="histmsg" hidden></p>
+    <p class="empty" id="histempty">Your history stays private. It's read from a file on your device and kept only in this browser. Nothing is uploaded.</p>
+    <div id="histbody" hidden>
+      <p class="note" style="margin:0 0 12px">Tap a row to load that bonus into the calculator.</p>
+      <div class="scroll"><table class="hist" id="hist"></table></div>
+      <p class="note">✓ means the calculator matches that stub to the cent. ≈ means it's close but not exact.</p>
+    </div>
+   </details>
+  </section>
+
 </div>
 
 <script>
@@ -153,17 +200,30 @@ const fmt=x=>'$'+x.toLocaleString('en-US',{minimumFractionDigits:2,maximumFracti
 const f0=x=>'$'+Math.round(x).toLocaleString('en-US');
 const SS_BASE={2012:110100,2013:113700,2014:117000,2015:118500,2016:118500,2017:127200,2018:128400,2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:184500};
 
+// Older checks taxed as a regular paycheck (Married, 0 allowances), using the mid-2014 tables
+function fedRegular2014(w){
+  const a=w*26, B=[[8450,0,.10],[26600,1815,.15],[82250,10162.5,.25],[157300,28925,.28],[235300,50765,.33],[413550,109587.5,.35],[466050,127962.5,.396]];
+  let t=0;for(const [lo,base,r] of B){if(a>lo)t=base+r*(a-lo)}
+  return r2(t/26);
+}
+function ohRegular2014(w,ex){
+  const a=w*26-ex*650, B=[[0,0,.00574],[5000,28.70,.01148],[10000,86.10,.02297],[15000,200.95,.02871],[20000,344.50,.03445],[40000,1033.50,.04019],[80000,2641.10,.04593],[100000,3559.70,.05741]];
+  let t=0;for(const [lo,base,r] of B){if(a>lo)t=base+r*(a-lo)}
+  return r2(t*(0.91/0.90)/26);
+}
+
 function calc(o){
   const pre=r2(o.bonus*o.k401/100);
   const roth=r2(o.bonus*o.roth/100);
   const taxable=o.bonus-pre;
-  const fed= taxable<=1e6 ? r2(taxable*o.fedr/100) : r2(1e6*o.fedr/100+(taxable-1e6)*.37);
+  const fed= o.fedMode==='regular2014' ? fedRegular2014(taxable)
+    : taxable<=1e6 ? r2(taxable*o.fedr/100) : r2(1e6*o.fedr/100+(taxable-1e6)*.37);
   const base=SS_BASE[o.year]||184500;
   const ssWages=Math.max(0,Math.min(o.bonus,base-o.ytd));
   const ss=r2(ssWages*(o.ssr??6.2)/100);
   const addl=Math.max(0,o.ytd+o.bonus-Math.max(200000,o.ytd));
   const med=r2(o.bonus*.0145+addl*.009);
-  const oh= r2(taxable*o.ohr/100);
+  const oh= o.ohMode==='regular2014' ? ohRegular2014(taxable,2) : r2(taxable*o.ohr/100);
   const sdBase=Math.max(0,taxable-o.sdx*(o.sdExAmt??650)/26);
   const sd=r2(sdBase*o.sdr/100);
   const taxes=r2(fed+ss+med+oh+sd);
@@ -202,7 +262,7 @@ function render(){
   $('tfed').textContent=f0(c.fed); $('tfica').textContent=f0(c.ss+c.med);
   $('tlocal').textContent=f0(c.oh+c.sd);
   const brk=num($('brk').value), owedEl=$('owedrow');
-  if(o.fedMode==='table2014'){owedEl.hidden=true}else{
+  if(o.fedMode==='regular2014'){owedEl.hidden=true}else{
     owedEl.hidden=false;
     const gap=r2(c.taxable*(brk-o.fedr)/100);
     owedEl.classList.toggle('refund',gap<0);
@@ -217,12 +277,12 @@ function render(){
   h+=`<tr class="sec"><td colspan="2">Pre-tax deductions</td></tr>`;
   h+=row('401K',`${o.k401}% × bonus`,'−'+fmt(c.pre),'neg');
   h+=`<tr class="sec"><td colspan="2">Taxes</td></tr>`;
-  h+=row('FED W/H',o.fedMode==='table2014'?`regular paycheck tables (Married) on ${t}`:`${o.fedr}% × ${t}`,'−'+fmt(c.fed),'neg');
+  h+=row('FED W/H',o.fedMode==='regular2014'?`regular paycheck tables (Married) on ${t}`:`${o.fedr}% × ${t}`,'−'+fmt(c.fed),'neg');
   const ssr=o.ssr??6.2;
   h+=row('FICA SOC EE',c.ssWages<o.bonus?`${ssr}% × ${fmt(c.ssWages)} (wage cap)`:`${ssr}% × ${fmt(o.bonus)}`,'−'+fmt(c.ss),'neg');
   h+=row('FICA MED EE',c.addl>0?`1.45% × bonus + 0.9% × ${fmt(c.addl)}`:`1.45% × ${fmt(o.bonus)}`,'−'+fmt(c.med),'neg');
-  h+=row('OH W/H',o.ohMode==='table2014'?`regular paycheck table on ${t}`:`${o.ohr}% × ${t}`,'−'+fmt(c.oh),'neg');
-  h+=row('School district W/H',`${o.sdr}% × ${fmt(c.sdBase)}`,'−'+fmt(c.sd),'neg');
+  h+=row('OH W/H',o.ohMode==='regular2014'?`regular paycheck table on ${t}`:`${o.ohr}% × ${t}`,'−'+fmt(c.oh),'neg');
+  h+=row(o.sdName||'School district W/H',`${o.sdr}% × ${fmt(c.sdBase)}`,'−'+fmt(c.sd),'neg');
   h+=`<tr class="sec"><td colspan="2">Post-tax deductions</td></tr>`;
   h+=row('ROTH',`${o.roth}% × bonus`,'−'+fmt(c.roth),'neg');
   h+=`<tr class="tot"><td>Net pay</td><td class="n">${fmt(c.net)}</td></tr>`;
@@ -231,21 +291,107 @@ function render(){
 }
 
 
+// ---------- Bonus history: loaded from a file on your device, kept only in this browser ----------
+const HKEY='bonus-history-v1';
+let HIST=[];
+function loadSaved(){try{HIST=JSON.parse(localStorage.getItem(HKEY)||'[]')}catch(e){HIST=[]}if(!Array.isArray(HIST))HIST=[]}
+function persist(){try{localStorage.setItem(HKEY,JSON.stringify(HIST));return true}catch(e){return false}}
+function msg(text,kind){const m=$('histmsg');m.textContent=text;m.className='msg '+kind;m.hidden=!text}
+function esc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function yearOf(x){return +String(x.date).split('/').pop()}
+function stubCalc(x){return calc({ohr:3.5,ytd:0,fedr:22,sdr:1,sdx:2,roth:0,...x,year:yearOf(x)})}
+function validate(data){
+  const list=Array.isArray(data)?data:data&&Array.isArray(data.stubs)?data.stubs:null;
+  if(!list||!list.length)throw new Error("This file doesn't contain any bonus stubs.");
+  return list.map((x,i)=>{
+    const n=k=>{const v=Number(x[k]);if(!isFinite(v))throw new Error(`Stub ${i+1} is missing a valid "${k}".`);return v};
+    if(!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(x.date||'')))throw new Error(`Stub ${i+1} needs a date like 11/21/2025.`);
+    const o={date:x.date,bonus:n('bonus'),net:n('net'),k401:n('k401'),roth:Number(x.roth)||0};
+    for(const k of ['fedr','ohr','sdr','sdx','sdExAmt','ssr'])if(x[k]!=null&&isFinite(Number(x[k])))o[k]=Number(x[k]);
+    for(const k of ['sdName','note'])if(x[k])o[k]=String(x[k]).slice(0,80);
+    for(const k of ['fedMode','ohMode'])if(x[k]==='regular2014')o[k]='regular2014';
+    return o;
+  });
+}
+function renderHist(){
+  const has=HIST.length>0;
+  $('histbody').hidden=!has; $('histempty').hidden=has;
+  $('exportbtn').hidden=!has; $('clearbtn').hidden=!has;
+  $('loadbtn').textContent=has?'Replace from file':'Load history file';
+  if(!has){$('histsum').textContent='Load your backup file to see it';$('hist').innerHTML='';return}
+  let h='<tr><th>Pay date</th><th>Bonus</th><th>401(k) / Roth</th><th>Calc net</th><th>Stub net</th><th></th></tr>';
+  let exact=0;
+  HIST.forEach((x,i)=>{
+    const c=stubCalc(x), ok=Math.abs(c.net-x.net)<0.005; if(ok)exact++;
+    h+=`<tr class="pick" tabindex="0" data-i="${i}"><td>${esc(x.date)}${x.note?`<span class="rule">${esc(x.note)}</span>`:''}</td><td>${fmt(x.bonus)}</td><td>${x.k401}% / ${x.roth}%<span class="amt">${fmt(c.pre)} / ${fmt(c.roth)}</span></td><td>${fmt(c.net)}</td><td>${fmt(x.net)}</td><td class="${ok?'ok':'approx'}">${ok?'✓':'≈'}</td></tr>`;
+  });
+  const tb=r2(HIST.reduce((a,x)=>a+x.bonus,0)), tn=r2(HIST.reduce((a,x)=>a+x.net,0));
+  h+=`<tr class="htot"><td>Total · ${HIST.length} bonuses<span class="rule">${(tn/tb*100).toFixed(1)}% kept as net pay</span></td><td>${fmt(tb)}</td><td></td><td></td><td>${fmt(tn)}</td><td></td></tr>`;
+  $('hist').innerHTML=h;
+  $('histsum').textContent=`${HIST.length} checks · ${exact} exact · ${fmt(tb)} total`;
+  document.querySelectorAll('tr.pick').forEach(r=>{
+    r.addEventListener('click',()=>loadStub(+r.dataset.i));
+    r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();loadStub(+r.dataset.i)}});
+  });
+}
+function setYear(y){
+  const sel=$('year');
+  if(![...sel.options].some(o=>o.value===String(y))){const op=document.createElement('option');op.value=y;op.textContent=String(y);sel.appendChild(op)}
+  sel.value=String(y);
+}
+function loadStub(i){
+  const x=HIST[i], f2=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  $('bonus').value=f2(x.bonus); $('k401').value=x.k401; $('roth').value=x.roth;
+  setYear(yearOf(x));
+  $('fedr').value=x.fedr??22; $('ohr').value=x.ohr??3.5; $('sdr').value=x.sdr??1; $('sdx').value=x.sdx??2; $('ytd').value='';
+  preset={d:x.date,net:x.net,ssr:x.ssr,sdExAmt:x.sdExAmt,sdName:x.sdName,fedMode:x.fedMode,ohMode:x.ohMode};
+  $('stubfold').open=true;
+  document.querySelectorAll('tr.pick').forEach(r=>r.classList.toggle('sel',r.dataset.i==String(i)));
+  render();
+  document.querySelector('.wrap').scrollIntoView({behavior:'smooth',block:'start'});
+}
+$('loadbtn').addEventListener('click',()=>{$('histfile').value='';$('histfile').click()});
+$('histfile').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f)return;
+  try{
+    const list=validate(JSON.parse(await f.text()));
+    list.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    HIST=list; renderHist(); $('histfold').open=true;
+    msg(persist()?`Loaded ${list.length} bonus checks. They're saved in this browser only.`:`Loaded ${list.length} bonus checks, but this browser won't keep them after you close it (private browsing?).`,'good');
+  }catch(err){msg(err instanceof SyntaxError?"That file isn't a valid history backup (it couldn't be read as JSON).":err.message,'bad')}
+});
+$('exportbtn').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify({app:'bonus-withholding-calculator',version:1,exported:new Date().toISOString().slice(0,10),stubs:HIST},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='bonus-history.json';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  msg('Backup saved as bonus-history.json.','good');
+});
+$('clearbtn').addEventListener('click',()=>{$('confirmclear').hidden=false});
+$('clearno').addEventListener('click',()=>{$('confirmclear').hidden=true});
+$('clearyes').addEventListener('click',()=>{
+  HIST=[];try{localStorage.removeItem(HKEY)}catch(e){}
+  $('confirmclear').hidden=true; clearPreset(); renderHist(); render();
+  msg('History removed from this browser.','good');
+});
+$('histfold').addEventListener('toggle',()=>{$('histchev').textContent=$('histfold').open?'Hide':'Show'});
+
 function clearPreset(){preset=null;document.querySelectorAll('tr.pick.sel').forEach(r=>r.classList.remove('sel'))}
 $('brk').addEventListener('change',render);
 $('stubfold').addEventListener('toggle',()=>{$('stubchev').textContent=$('stubfold').open?'Hide':'Show'});
 $('year').addEventListener('change',()=>{clearPreset();$('ohr').value=$('year').value==='2026'?'2.75':'3.5';render()});
 // Select the whole value on focus so typing replaces it
-document.querySelectorAll('input').forEach(i=>{
+document.querySelectorAll('input[type=text]').forEach(i=>{
   let fresh=false;
   i.addEventListener('focus',()=>{fresh=true;setTimeout(()=>{try{i.setSelectionRange(0,i.value.length)}catch(e){i.select()}},0)});
   i.addEventListener('mouseup',e=>{if(fresh){e.preventDefault();fresh=false}});
   i.addEventListener('touchend',()=>{if(fresh){setTimeout(()=>{try{i.setSelectionRange(0,i.value.length)}catch(e){}},0);fresh=false}});
   i.addEventListener('blur',()=>{fresh=false});
 });
-document.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{if(preset&&i.id==='bonus')preset={...preset,d:null};render()}));
+document.querySelectorAll('input[type=text]').forEach(i=>i.addEventListener('input',()=>{if(preset&&i.id==='bonus')preset={...preset,d:null};render()}));
 $('bonus').addEventListener('blur',()=>{const n=num($('bonus').value);$('bonus').value=n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})});
 restore();
+loadSaved();
+renderHist();
 render();
 </script>
 
